@@ -44,7 +44,7 @@ jobs:
 
       # 3. Cache Playwright browsers
       - name: 📦 Cache Playwright browsers
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         id: playwright-cache
         with:
           path: ~/.cache/ms-playwright
@@ -70,7 +70,7 @@ jobs:
       # 7. Upload screenshots (for debugging)
       - name: 📸 Upload screenshots
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: debug-screenshots
           path: |

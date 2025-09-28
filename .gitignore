@@ -1,0 +1,7 @@
+node_modules/
+*.png
+sync-results.json
+.env
+.DS_Store
+debug-*
+package-lock.json

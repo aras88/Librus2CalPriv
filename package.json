@@ -1,0 +1,23 @@
+{
+  "name": "librus-github-actions-sync",
+  "version": "1.0.0",
+  "description": "Automated Librus to Google Calendar sync using GitHub Actions and Playwright",
+  "main": "tests/librus-sync.js",
+  "scripts": {
+    "test": "node tests/librus-sync-final.js",
+    "test:old": "node tests/librus-sync.js",
+    "test:headed": "HEADLESS=false node tests/librus-sync-final.js",
+    "install-browsers": "npx playwright install chromium"
+  },
+  "keywords": [
+    "librus",
+    "playwright",
+    "automation",
+    "github-actions"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "playwright": "^1.40.0"
+  }
+}
