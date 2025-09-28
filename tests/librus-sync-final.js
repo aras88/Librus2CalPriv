@@ -35,17 +35,12 @@ class LibrusClient {
       ]
     });
 
-    // Enable tracing for debugging
+    // Create context without video recording
     this.context = await this.browser.newContext({
       userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
       viewport: { width: 1280, height: 720 },
       locale: 'pl-PL',
-      timezoneId: 'Europe/Warsaw',
-      // Record video for debugging
-      recordVideo: {
-        dir: './videos',
-        size: { width: 1280, height: 720 }
-      }
+      timezoneId: 'Europe/Warsaw'
     });
 
     // Start tracing
@@ -135,10 +130,12 @@ class LibrusClient {
     try {
       // First visit main page
       console.log('  ⏱️ Start request:', new Date().toISOString());
+      console.log('  📍 Nawigacja do: https://portal.librus.pl/rodzina');
       const response1 = await this.page.goto('https://portal.librus.pl/rodzina', {
-        waitUntil: 'domcontentloaded',
-        timeout: 30000
+        waitUntil: 'networkidle',
+        timeout: 60000
       });
+      console.log('  ✅ Strona załadowana, czekam na elementy...');
       console.log('  ⏱️ End request:', new Date().toISOString());
       console.log(`  📊 Status strony głównej: ${response1.status()}`);
 
@@ -257,7 +254,7 @@ class LibrusClient {
 
             // Click and wait for navigation
             await Promise.all([
-              this.page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 30000 }),
+              this.page.waitForNavigation({ waitUntil: 'networkidle', timeout: 60000 }),
               loginButton.click()
             ]);
 
@@ -272,10 +269,12 @@ class LibrusClient {
 
       if (!loginButtonClicked) {
         console.log('  ⚠️ Nie znaleziono przycisku logowania, nawiguję bezpośrednio...');
+        console.log('  📍 Nawigacja do: https://portal.librus.pl/konto-librus/login');
         const response2 = await this.page.goto('https://portal.librus.pl/konto-librus/login', {
-          waitUntil: 'domcontentloaded',
-          timeout: 30000
+          waitUntil: 'networkidle',
+          timeout: 60000
         });
+        console.log('  ✅ Strona logowania załadowana');
         console.log(`  📊 Status strony logowania: ${response2.status()}`);
       } else {
         console.log(`  📊 Przeszedłem na stronę logowania`);
@@ -362,8 +361,8 @@ class LibrusClient {
       // Submit form with navigation wait
       const [response] = await Promise.all([
         this.page.waitForNavigation({
-          waitUntil: 'domcontentloaded',
-          timeout: 30000
+          waitUntil: 'networkidle',
+          timeout: 60000
         }),
         this.page.click('button[type="submit"], input[type="submit"]')
       ]);
@@ -500,8 +499,7 @@ class LibrusClient {
 
     const endpoints = [
       { url: 'https://api.librus.pl/3.0/Me', desc: 'Dane użytkownika' },
-      { url: 'https://api.librus.pl/3.0/Timetables', desc: 'Plan lekcji' },
-      { url: 'https://api.librus.pl/3.0/Homeworks', desc: 'Prace domowe' }
+      { url: 'https://api.librus.pl/3.0/Timetables', desc: 'Plan lekcji' }
     ];
 
     for (const endpoint of endpoints) {
@@ -537,10 +535,12 @@ class LibrusClient {
       console.log(`  📍 Nawigacja do: ${widgetUrl}`);
 
       // Navigate to widget page
+      console.log('  🔄 Nawigacja do widgetu...');
       const response = await this.page.goto(widgetUrl, {
-        waitUntil: 'domcontentloaded',
-        timeout: 30000
+        waitUntil: 'networkidle',
+        timeout: 60000
       });
+      console.log('  ✅ Widget załadowany');
 
       const status = response.status();
       const url = this.page.url();
@@ -609,6 +609,89 @@ class LibrusClient {
   }
 
   /**
+   * Generate HTML report
+   */
+  async generateHtmlReport(results) {
+    const timestamp = new Date().toISOString();
+    const success = results.success || false;
+
+    const html = `<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Librus Sync Report - ${timestamp}</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
+        .container { max-width: 1200px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; }
+        .status { padding: 15px; border-radius: 5px; margin-bottom: 20px; }
+        .success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .failure { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .info { background: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
+        h1 { color: #333; }
+        .section { margin: 20px 0; }
+        .data { background: #f8f9fa; padding: 10px; border-radius: 5px; font-family: monospace; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { padding: 10px; text-align: left; border-bottom: 1px solid #ddd; }
+        th { background-color: #f2f2f2; }
+        .timestamp { color: #666; font-size: 0.9em; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📊 Librus Sync Report</h1>
+        <div class="timestamp">Generated: ${timestamp}</div>
+
+        <div class="status ${success ? 'success' : 'failure'}">
+            <h2>${success ? '✅ SUCCESS' : '❌ FAILURE'}</h2>
+            <p>Status: ${success ? 'Logged in successfully' : 'Login failed'}</p>
+        </div>
+
+        <div class="section">
+            <h3>🔐 Authentication Details</h3>
+            <table>
+                <tr><th>Property</th><th>Value</th></tr>
+                <tr><td>Username</td><td>${this.username}</td></tr>
+                <tr><td>Bearer Token</td><td>${this.bearerToken ? '✅ Obtained' : '❌ Not obtained'}</td></tr>
+                <tr><td>Accounts Found</td><td>${this.synergiaAccounts.length}</td></tr>
+                <tr><td>Cookies Set</td><td>${Object.keys(this.cookies).length}</td></tr>
+            </table>
+        </div>
+
+        ${this.synergiaAccounts.length > 0 ? `
+        <div class="section">
+            <h3>👨‍👩‍👧‍👦 Synergia Accounts</h3>
+            <table>
+                <tr><th>ID</th><th>Name</th></tr>
+                ${this.synergiaAccounts.map(acc =>
+                  `<tr><td>${acc.id}</td><td>${acc.name || 'Unknown'}</td></tr>`
+                ).join('')}
+            </table>
+        </div>
+        ` : ''}
+
+        <div class="section">
+            <h3>🍪 Cookies</h3>
+            <div class="data">${Object.keys(this.cookies).join(', ') || 'No cookies'}</div>
+        </div>
+
+        <div class="section info">
+            <h3>📝 Notes</h3>
+            <ul>
+                <li>Test executed in ${process.env.HEADLESS !== 'false' ? 'headless' : 'headed'} mode</li>
+                <li>Platform: ${process.platform}</li>
+                <li>Node version: ${process.version}</li>
+            </ul>
+        </div>
+    </div>
+</body>
+</html>`;
+
+    await fs.writeFile('test-report.html', html);
+    console.log('📄 HTML report generated: test-report.html');
+  }
+
+  /**
    * Cleanup browser
    */
   async cleanup() {
@@ -621,9 +704,8 @@ class LibrusClient {
       });
       console.log('📊 Trace zapisany do trace.zip');
 
-      // Close context to save video
+      // Close context
       await this.context.close();
-      console.log('📹 Video zapisane do ./videos/');
     }
 
     if (this.browser) {
@@ -656,14 +738,19 @@ class LibrusClient {
       console.log('\n❌ NIEPOWODZENIE - nie udało się zalogować');
     }
 
-    await this.cleanup();
-
-    return {
+    const results = {
       success: success,
       bearerToken: this.bearerToken,
       accounts: this.synergiaAccounts,
       timestamp: new Date().toISOString()
     };
+
+    // Generate HTML report
+    await this.generateHtmlReport(results);
+
+    await this.cleanup();
+
+    return results;
   }
 }
 
