@@ -5,3 +5,8 @@ sync-results.json
 .DS_Store
 debug-*
 package-lock.json
+playwright-report/
+test-results.json
+trace.zip
+videos/
+test-results/

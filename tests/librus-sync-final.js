@@ -35,11 +35,24 @@ class LibrusClient {
       ]
     });
 
+    // Enable tracing for debugging
     this.context = await this.browser.newContext({
       userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
       viewport: { width: 1280, height: 720 },
       locale: 'pl-PL',
-      timezoneId: 'Europe/Warsaw'
+      timezoneId: 'Europe/Warsaw',
+      // Record video for debugging
+      recordVideo: {
+        dir: './videos',
+        size: { width: 1280, height: 720 }
+      }
+    });
+
+    // Start tracing
+    await this.context.tracing.start({
+      screenshots: true,
+      snapshots: true,
+      sources: true
     });
 
     this.page = await this.context.newPage();
@@ -129,19 +142,159 @@ class LibrusClient {
       console.log('  ⏱️ End request:', new Date().toISOString());
       console.log(`  📊 Status strony głównej: ${response1.status()}`);
 
+      // Check for Cloudflare challenge or "Wróć do strony głównej" button
+      console.log('  🔍 Sprawdzanie czy jest strona Cloudflare...');
+
+      // Wait a bit for Cloudflare to load
+      await this.page.waitForTimeout(3000);
+
+      // Check if we have "Wróć do strony głównej" button or similar
+      // Try multiple selectors to find the button
+      const selectors = [
+        'text="Wróć do strony głównej"',
+        'a:has-text("Wróć do strony głównej")',
+        'button:has-text("Wróć do strony głównej")',
+        'a[href*="portal.librus.pl"]',
+        '.btn:has-text("Wróć")',
+        'a.btn'
+      ];
+
+      let buttonClicked = false;
+      for (const selector of selectors) {
+        try {
+          const button = await this.page.$(selector);
+          if (button) {
+            const buttonText = await button.textContent();
+            console.log(`  ⚠️ Znaleziono przycisk: "${buttonText}" - klikam...`);
+            await button.click();
+            await this.page.waitForLoadState('networkidle');
+            console.log('  ✓ Kliknięto, czekam na załadowanie...');
+            await this.page.waitForTimeout(3000);
+            buttonClicked = true;
+            break;
+          }
+        } catch (e) {
+          // Try next selector
+        }
+      }
+
+      if (!buttonClicked) {
+        // Take screenshot for debugging
+        await this.page.screenshot({ path: 'debug-cloudflare-page.png' });
+        console.log('  📸 Screenshot saved as debug-cloudflare-page.png');
+      }
+
+      // Check for cookie consent banner FIRST
+      console.log('  🍪 Sprawdzanie baneru ciasteczek...');
+      try {
+        // Look for cookie consent button - try multiple selectors
+        const cookieSelectors = [
+          'button:has-text("Akceptuję i przechodzę do serwisu")',
+          'button:has-text("Akceptuj")',
+          'text="Akceptuję i przechodzę do serwisu"',
+          'button.btn-primary:has-text("Akceptuj")',
+          '[class*="cookie"] button',
+          '[class*="consent"] button',
+          'button:has-text("Accept")'
+        ];
+
+        for (const selector of cookieSelectors) {
+          const cookieButton = await this.page.$(selector);
+          if (cookieButton) {
+            const buttonText = await cookieButton.textContent();
+            console.log(`  ✅ Znaleziono przycisk ciasteczek: "${buttonText.trim()}"`);
+            await cookieButton.click();
+            console.log('  ✅ Kliknięto akceptację ciasteczek');
+            await this.page.waitForTimeout(2000);
+            break;
+          }
+        }
+      } catch (e) {
+        console.log('  ℹ️ Brak baneru ciasteczek lub już zaakceptowany');
+      }
+
+      // Check for Cloudflare verification
+      const pageContent = await this.page.content();
+      if (pageContent.includes('Cloudflare') || pageContent.includes('Checking your browser')) {
+        console.log('  ⚠️ Wykryto weryfikację Cloudflare, czekam...');
+        await this.page.waitForTimeout(8000);
+
+        // Try to click any continue button
+        const continueButton = await this.page.$('button:has-text("Continue"), a:has-text("Continue"), button:has-text("Kontynuuj")');
+        if (continueButton) {
+          console.log('  🖱️ Klikam przycisk kontynuuj...');
+          await continueButton.click();
+          await this.page.waitForTimeout(2000);
+        }
+      }
+
       // Store cookies
       await this.updateCookies();
       console.log(`  🍪 Ciasteczka po stronie głównej: ${Object.keys(this.cookies).join(', ')}`);
 
-      // Now go to login page
-      console.log('  🌐 Pobieranie strony logowania...');
-      console.log('  ⏱️ Start login page request:', new Date().toISOString());
-      const response2 = await this.page.goto('https://portal.librus.pl/konto-librus/login', {
-        waitUntil: 'domcontentloaded',
-        timeout: 30000
-      });
-      console.log('  ⏱️ End login page request:', new Date().toISOString());
-      console.log(`  📊 Status strony logowania: ${response2.status()}`);
+      // Click on login button instead of direct navigation
+      console.log('  🔍 Szukam przycisku "Zaloguj (mam Konto LIBRUS)"...');
+
+      // Try different selectors for the login button
+      const loginButtonSelectors = [
+        'text="Zaloguj (mam Konto LIBRUS)"',
+        'a:has-text("Zaloguj")',
+        'a:has-text("mam Konto LIBRUS")',
+        'button:has-text("Zaloguj")',
+        '[href*="login"]:has-text("Zaloguj")',
+        'a.btn:has-text("Zaloguj")',
+        '.login-button',
+        'a[href*="konto-librus/login"]'
+      ];
+
+      let loginButtonClicked = false;
+      for (const selector of loginButtonSelectors) {
+        try {
+          const loginButton = await this.page.$(selector);
+          if (loginButton) {
+            const buttonText = await loginButton.textContent();
+            console.log(`  ✅ Znaleziono przycisk logowania: "${buttonText.trim()}"`);
+
+            // Click and wait for navigation
+            await Promise.all([
+              this.page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 30000 }),
+              loginButton.click()
+            ]);
+
+            console.log('  ✅ Kliknięto przycisk logowania');
+            loginButtonClicked = true;
+            break;
+          }
+        } catch (e) {
+          // Try next selector
+        }
+      }
+
+      if (!loginButtonClicked) {
+        console.log('  ⚠️ Nie znaleziono przycisku logowania, nawiguję bezpośrednio...');
+        const response2 = await this.page.goto('https://portal.librus.pl/konto-librus/login', {
+          waitUntil: 'domcontentloaded',
+          timeout: 30000
+        });
+        console.log(`  📊 Status strony logowania: ${response2.status()}`);
+      } else {
+        console.log(`  📊 Przeszedłem na stronę logowania`);
+      }
+
+      console.log(`  🔗 Aktualny URL: ${this.page.url()}`);
+
+      // Check for cookie consent again on login page
+      await this.page.waitForTimeout(2000);
+      try {
+        const cookieButton = await this.page.$('button:has-text("Akceptuję i przechodzę do serwisu"), button:has-text("Akceptuj")');
+        if (cookieButton) {
+          console.log('  🍪 Znaleziono baner ciasteczek na stronie logowania - klikam...');
+          await cookieButton.click();
+          await this.page.waitForTimeout(2000);
+        }
+      } catch (e) {
+        // Ignore if no cookie banner
+      }
 
       await this.updateCookies();
       console.log(`  🍪 Ciasteczka po stronie logowania: ${Object.keys(this.cookies).join(', ')}`);
@@ -374,10 +527,105 @@ class LibrusClient {
   }
 
   /**
+   * Verify widget page loads correctly
+   */
+  async verifyWidgetPage() {
+    console.log('\n🔍 Weryfikacja dostępu do widgetu Librus...');
+
+    try {
+      const widgetUrl = 'https://portal.librus.pl/vendor/widget-librus/index.html?v=1759002805';
+      console.log(`  📍 Nawigacja do: ${widgetUrl}`);
+
+      // Navigate to widget page
+      const response = await this.page.goto(widgetUrl, {
+        waitUntil: 'domcontentloaded',
+        timeout: 30000
+      });
+
+      const status = response.status();
+      const url = this.page.url();
+
+      console.log(`  📊 Status odpowiedzi: ${status}`);
+      console.log(`  🔗 Aktualny URL: ${url}`);
+
+      // Check if page loaded successfully
+      if (status === 200) {
+        // Wait for widget content to load
+        await this.page.waitForTimeout(3000);
+
+        // Check for widget elements
+        const hasWidgetContent = await this.page.evaluate(() => {
+          // Check for various widget elements
+          const selectors = [
+            '.widget-container',
+            '#widget-librus',
+            '.librus-widget',
+            'iframe[src*="librus"]',
+            '[class*="widget"]',
+            '[id*="widget"]'
+          ];
+
+          for (const selector of selectors) {
+            if (document.querySelector(selector)) {
+              return true;
+            }
+          }
+
+          // Check if there's any content at all
+          return document.body && document.body.innerHTML.length > 100;
+        });
+
+        if (hasWidgetContent) {
+          console.log('  ✅ Widget załadowany pomyślnie');
+
+          // Take screenshot for verification
+          await this.page.screenshot({
+            path: 'widget-verification.png',
+            fullPage: true
+          });
+          console.log('  📸 Screenshot widgetu zapisany jako widget-verification.png');
+
+          return true;
+        } else {
+          console.log('  ⚠️ Widget załadowany ale brak zawartości');
+          return false;
+        }
+      } else {
+        console.log(`  ❌ Błąd ładowania widgetu - status: ${status}`);
+        return false;
+      }
+
+    } catch (error) {
+      console.error('  ❌ Błąd podczas weryfikacji widgetu:', error.message);
+
+      // Take error screenshot
+      await this.page.screenshot({
+        path: 'widget-error.png',
+        fullPage: true
+      });
+
+      return false;
+    }
+  }
+
+  /**
    * Cleanup browser
    */
   async cleanup() {
     console.log('\n🧹 Czyszczenie...');
+
+    // Stop tracing and save it
+    if (this.context) {
+      await this.context.tracing.stop({
+        path: 'trace.zip'
+      });
+      console.log('📊 Trace zapisany do trace.zip');
+
+      // Close context to save video
+      await this.context.close();
+      console.log('📹 Video zapisane do ./videos/');
+    }
+
     if (this.browser) {
       await this.browser.close();
     }
@@ -398,6 +646,12 @@ class LibrusClient {
       console.log(`  - Ciasteczka: ${Object.keys(this.cookies).length}`);
 
       await this.testApiAccess();
+
+      // Verify widget page at the end
+      const widgetVerified = await this.verifyWidgetPage();
+      if (!widgetVerified) {
+        console.log('⚠️ Uwaga: Widget Librus nie załadował się poprawnie');
+      }
     } else {
       console.log('\n❌ NIEPOWODZENIE - nie udało się zalogować');
     }

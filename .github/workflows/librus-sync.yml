@@ -67,18 +67,32 @@ jobs:
           HEADLESS: ${{ github.event.inputs.debug == 'true' && 'false' || 'true' }}
         run: npm test
 
-      # 7. Upload screenshots (for debugging)
-      - name: 📸 Upload screenshots
+      # 7. Upload test artifacts (screenshots, videos, traces, reports)
+      - name: 📸 Upload test artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: debug-screenshots
+          name: test-artifacts-${{ github.run_number }}
           path: |
             *.png
             sync-results.json
+            trace.zip
+            videos/
+            playwright-report/
+            test-results.json
+            debug-*.png
           retention-days: 7
 
-      # 8. Upload sync results
+      # 8. Upload HTML Report separately for easy access
+      - name: 📊 Upload Playwright HTML Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-${{ github.run_number }}
+          path: playwright-report/
+          retention-days: 30
+
+      # 9. Show sync results
       - name: 📊 Show sync results
         if: always()
         run: |
@@ -87,7 +101,7 @@ jobs:
             cat sync-results.json | jq '.'
           fi
 
-      # 9. Create issue on failure
+      # 10. Create issue on failure
       - name: 🚨 Create issue on failure
         if: failure()
         uses: actions/github-script@v7
