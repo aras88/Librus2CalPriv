@@ -16,7 +16,7 @@ on:
 
   # Automatycznie codziennie o 7:00 UTC (8:00 lub 9:00 w Polsce)
   schedule:
-    - cron: '0 7 * * *'
+    - cron: '0 * * * *'
 
   # Na push do main (dla testów)
   push:
