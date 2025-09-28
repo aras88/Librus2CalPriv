@@ -1,0 +1,54 @@
+name: Test Librus with Playwright
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+
+jobs:
+  test-playwright:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: 🎭 Setup Playwright
+        run: |
+          pip install playwright
+          playwright install chromium
+          playwright install-deps
+
+      - name: 🧪 Run Playwright Test
+        env:
+          LIBRUS_USERNAME: ${{ secrets.LIBRUS_USERNAME }}
+          LIBRUS_PASSWORD: ${{ secrets.LIBRUS_PASSWORD }}
+        run: |
+          python test_librus_messages.py
+
+      - name: 📸 Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: |
+            *.png
+
+      - name: 📊 Show test results
+        if: always()
+        run: |
+          echo "=== Test Summary ==="
+          if [ -f login_page.png ]; then
+            echo "✅ Login page screenshot exists"
+          fi
+          if [ -f after_login.png ]; then
+            echo "✅ After login screenshot exists"
+          fi
+          if [ -f error.png ]; then
+            echo "❌ Error screenshot exists - check artifacts"
+          fi
