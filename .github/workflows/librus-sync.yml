@@ -1,42 +1,135 @@
-name: Test Librus with Selenium
+name: Librus Calendar Sync
 
+# Kiedy uruchamiać workflow
 on:
+  # Ręczne uruchomienie z GitHub UI
   workflow_dispatch:
+    inputs:
+      debug:
+        description: 'Enable debug mode'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+
+  # Automatycznie codziennie o 7:00 UTC (8:00 lub 9:00 w Polsce)
+  schedule:
+    - cron: '0 7 * * *'
+
+  # Na push do main (dla testów)
   push:
-    branches: [ main, master ]
+    branches: [main]
+    paths:
+      - 'tests/**'
+      - '.github/workflows/**'
 
 jobs:
-  test-selenium:
+  sync:
+    name: Sync Librus to Calendar
     runs-on: ubuntu-latest
 
     steps:
-      - name: 📥 Checkout
+      # 1. Checkout code
+      - name: 📥 Checkout repository
         uses: actions/checkout@v4
 
-      - name: 🐍 Setup Python
-        uses: actions/setup-python@v5
+      # 2. Setup Node.js
+      - name: 🔧 Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          python-version: '3.10'
+          node-version: '20'
+          cache: 'npm'
 
-      - name: 🌐 Setup Chrome
-        uses: browser-actions/setup-chrome@v1
+      # 3. Cache Playwright browsers
+      - name: 📦 Cache Playwright browsers
+        uses: actions/cache@v3
+        id: playwright-cache
         with:
-          chrome-version: stable
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('package-lock.json') }}
 
-      - name: 📦 Install dependencies
-        run: |
-          pip install selenium requests
-          pip install undetected-chromedriver
+      # 4. Install dependencies
+      - name: 📚 Install dependencies
+        run: npm ci
 
-      - name: 🧪 Run Selenium Test
+      # 5. Install Playwright browsers if not cached
+      - name: 🌐 Install Playwright browsers
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: npm run install-browsers
+
+      # 6. Run sync script
+      - name: 🔄 Run Librus sync
         env:
           LIBRUS_USERNAME: ${{ secrets.LIBRUS_USERNAME }}
           LIBRUS_PASSWORD: ${{ secrets.LIBRUS_PASSWORD }}
-        run: |
-          python test_with_selenium.py
+          HEADLESS: ${{ github.event.inputs.debug == 'true' && 'false' || 'true' }}
+        run: npm test
 
-      - name: 💾 Save screenshot on failure
-        if: failure()
+      # 7. Upload screenshots (for debugging)
+      - name: 📸 Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: debug-screenshots
+          path: |
+            *.png
+            sync-results.json
+          retention-days: 7
+
+      # 8. Upload sync results
+      - name: 📊 Show sync results
+        if: always()
         run: |
-          # Jeśli test nie przejdzie, zapisz screenshot
-          echo "Test failed - check logs"
+          if [ -f sync-results.json ]; then
+            echo "Sync Results:"
+            cat sync-results.json | jq '.'
+          fi
+
+      # 9. Create issue on failure
+      - name: 🚨 Create issue on failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const date = new Date().toISOString().split('T')[0];
+            const title = `Librus sync failed - ${date}`;
+
+            // Check if issue already exists
+            const issues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'sync-failure'
+            });
+
+            const existingIssue = issues.data.find(i => i.title === title);
+
+            if (!existingIssue) {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: title,
+                body: `Librus sync failed on ${date}.\n\nCheck the [workflow run](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}) for details.`,
+                labels: ['sync-failure', 'automated']
+              });
+            }
+
+  # Optional: Send notification
+  notify:
+    name: Send Notification
+    runs-on: ubuntu-latest
+    needs: sync
+    if: always()
+
+    steps:
+      - name: 📮 Send notification
+        run: |
+          if [ "${{ needs.sync.result }}" == "success" ]; then
+            echo "✅ Sync completed successfully"
+            # Here you could send email, Discord, Slack notification etc.
+          else
+            echo "❌ Sync failed"
+            # Send failure notification
+          fi
